@@ -1,9 +1,8 @@
 #!/bin/bash
 
 # ==============================================================================
-# GRATISBOT v4.0 - Universal & Deep-Technology Aware Auto-Deployment
-# Supports: Laravel, PHP, Node.js (SSR/SPA), Python (Django/Flask), 
-#           Ruby on Rails, Go, Java Spring Boot, Docker, & Static Web
+# GRATISBOT v4.0 - Universal & Deep-Technology Aware Auto-Deployment Engine
+# Fixed: Standalone Composer binary, dynamic PHP extension binder, & Apache permissions
 # ==============================================================================
 
 set -e
@@ -31,6 +30,11 @@ sudo apt-get install -y curl wget git unzip software-properties-common ufw \
 
 git config --global --add safe.directory "*"
 sudo a2enmod rewrite headers proxy proxy_http proxy_balancer lbmethod_byrequests 2>/dev/null || true
+
+# Install Standalone Composer Phar (Solusi PHP Parse Error pada Composer APT)
+echo -e "${YELLOW}Mengunduh Standalone Composer Phar Binary...${NC}"
+sudo wget https://getcomposer.org/download/latest-stable/composer.phar -O /usr/local/bin/composer
+sudo chmod +x /usr/local/bin/composer
 
 # ------------------------------------------------------------------------------
 # 2. KLONING REPOSITORI GITHUB
@@ -104,11 +108,12 @@ echo -e "\n${YELLOW}[4/6] Mengonfigurasi Runtime Environment...${NC}"
 
 case $FRAMEWORK in
     LARAVEL|PHP)
-        PHP_VER="7.4" # Fallback dasar jika tidak ada spesifikasi di composer
+        PHP_VER="8.2" # Default modern
         if [ -f "composer.json" ]; then
             if grep -q '"php":' composer.json; then
                 REQ_PHP=$(grep -i '"php"' composer.json | head -n 1)
-                if echo "$REQ_PHP" | grep -qE '8\.3|8\.2'; then PHP_VER="8.2";
+                if echo "$REQ_PHP" | grep -qE '8\.3'; then PHP_VER="8.3";
+                elif echo "$REQ_PHP" | grep -qE '8\.2'; then PHP_VER="8.2";
                 elif echo "$REQ_PHP" | grep -qE '8\.1'; then PHP_VER="8.1";
                 elif echo "$REQ_PHP" | grep -qE '8\.0'; then PHP_VER="8.0";
                 elif echo "$REQ_PHP" | grep -qE '7\.4|7\.3|7\.2'; then PHP_VER="7.4"; fi
@@ -122,32 +127,38 @@ case $FRAMEWORK in
                                 php$PHP_VER-mysql php$PHP_VER-xml php$PHP_VER-curl \
                                 php$PHP_VER-mbstring php$PHP_VER-zip php$PHP_VER-gd \
                                 php$PHP_VER-bcmath php$PHP_VER-intl php$PHP_VER-tokenizer \
-                                php$PHP_VER-sqlite3 libapache2-mod-php$PHP_VER composer
+                                php$PHP_VER-sqlite3 libapache2-mod-php$PHP_VER
 
+        # Alihkan CLI dan Apache MPM ke versi terdeteksi
         sudo update-alternatives --set php /usr/bin/php$PHP_VER
-        sudo a2dismod php* 2>/dev/null || true
+        
+        # Matikan semua modul PHP di Apache sebelum mengaktifkan yang sesuai
+        for mod in $(ls /etc/apache2/mods-enabled/php*.load 2>/dev/null); do
+            sudo a2dismod $(basename "$mod" .load) 2>/dev/null || true
+        done
         sudo a2enmod php$PHP_VER
 
         if [ -f "composer.json" ]; then
-            php$PHP_VER /usr/bin/composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-reqs
+            echo -e "${YELLOW}Menjalankan Composer Install...${NC}"
+            /usr/local/bin/composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-reqs
         fi
 
         if [ "$FRAMEWORK" == "LARAVEL" ]; then
             [ ! -f ".env" ] && ([ -f ".env.example" ] && cp .env.example .env || touch .env)
-            sed -i 's|APP_URL=.*|APP_URL=|' .env
-            grep -q "^ASSET_URL=" .env && sed -i 's|ASSET_URL=.*|ASSET_URL=.|' .env || echo "ASSET_URL=." >> .env
+            sed -i 's|APP_URL=.*|APP_URL=http://localhost|' .env
             php$PHP_VER artisan key:generate --force
             php$PHP_VER artisan storage:link --force 2>/dev/null || true
-            sudo chmod -R 777 storage bootstrap/cache
             DOC_ROOT="$TARGET_DIR/public"
         else
             DOC_ROOT="$TARGET_DIR"
         fi
 
         if [ -f "package.json" ]; then
+            echo -e "${YELLOW}Mengompilasi Aset Frontend (NPM)...${NC}"
             sudo apt-get install -y nodejs npm
-            npm install
-            npm run prod 2>/dev/null || npm run build 2>/dev/null || true
+            export NODE_OPTIONS=--max-old-space-size=2048
+            npm install --legacy-peer-deps || npm install
+            npm run build 2>/dev/null || npm run prod 2>/dev/null || true
         fi
         ;;
 
@@ -158,6 +169,7 @@ case $FRAMEWORK in
         npm install
 
         if [ "$FRAMEWORK" == "NODE_FRONTEND" ] && grep -q '"build":' package.json; then
+            export NODE_OPTIONS=--max-old-space-size=2048
             npm run build
             DOC_ROOT="$TARGET_DIR/dist"
             [ ! -d "$DOC_ROOT" ] && DOC_ROOT="$TARGET_DIR/build"
@@ -298,13 +310,21 @@ if [ "$FRAMEWORK" == "LARAVEL" ] && [ -z "$SQL_FILE" ] && [ -n "$DB_NAME" ]; the
 fi
 
 # ------------------------------------------------------------------------------
-# 6. PENYESUAIAN SERVER WEB (APACHE ARCHITECTURE)
+# 6. PENYESUAIAN HAK AKSES & APACHE SERVER
 # ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}[6/6] Menyiapkan Apache VirtualHost & Routing...${NC}"
+echo -e "\n${YELLOW}[6/6] Menyesuaikan Permisi Direktori & Apache VirtualHost...${NC}"
+
+# Perbaikan Hak Akses Direktori Proyek
+sudo chown -R www-data:www-data "$TARGET_DIR"
+sudo chmod -R 775 "$TARGET_DIR"
+if [ "$FRAMEWORK" == "LARAVEL" ]; then
+    sudo chmod -R 777 "$TARGET_DIR/storage" "$TARGET_DIR/bootstrap/cache"
+fi
+
 VHOST_CONF="/etc/apache2/sites-available/$REPO_NAME.conf"
 
 if [ "$IS_PROXY" = true ]; then
-    # Jika berbasis Application Server (Node, Python, Go, Java, Docker, Rails) -> Gunakan Reverse Proxy
+    # Jika berbasis Application Server (Node, Python, Go, Java, Docker, Rails) -> Reverse Proxy
     sudo bash -c "cat <<EOF > $VHOST_CONF
 <VirtualHost *:80>
     ServerName localhost
