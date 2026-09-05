@@ -26,9 +26,7 @@ Sering mengalami masalah XAMPP error, port bentrok, atau laptop lemot saat mau d
 ### Langkah 1: Buka Cloud Terminal Gratis
 Buka playground Ubuntu gratis di **[Killercoda Ubuntu Playground](https://killercoda.com/playgrounds/scenario/ubuntu)** (Login dengan akun GitHub).
 
-### Langkah 2: Jalankan Command GRATISBOT
-Tempelkan perintah ini di terminal Killercoda:
+<h3>Langkah 2: Jalankan Command GRATISBOT</h3>
+<p>Tempelkan perintah ini di terminal Killercoda:</p>
 
-```bash
-curl -sSL [https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh](https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh) | bash
-```
+<pre><code>curl -sSL https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh | bash</code></pre>
