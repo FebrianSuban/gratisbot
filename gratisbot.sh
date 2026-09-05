@@ -17,7 +17,7 @@ echo -e "${GREEN}    GRATISBOT: Automated Student App Deployment    ${NC}"
 echo -e "${BLUE}====================================================${NC}"
 echo ""
 
-# 1. Input Repository GitHub
+# 1. Input Repository GitHub (Menggunakan /dev/tty agar aman dijalankan via pipe curl)
 read -p "Masukkan Link Repository GitHub Proyek Kamu: " REPO_URL < /dev/tty
 
 if [ -z "$REPO_URL" ]; then
@@ -45,8 +45,76 @@ echo -e "\n${YELLOW}[2/4] Menganalisis Teknologi Proyek...${NC}"
 PORT=80
 
 # 2. Deteksi Otomatis Stack Teknologi
-if [ -f "package.json" ]; then
-    echo -e "${GREEN}[TERDETEKSI] Aplikasi Node.js${NC}"
+
+# PRIORITAS 1: Cek apakah ini Laravel / CodeIgniter / PHP Native
+if [ -f "artisan" ] || [ -f "composer.json" ] || ls *.php &>/dev/null; then
+    echo -e "${GREEN}[TERDETEKSI] Aplikasi PHP / Laravel${NC}"
+    
+    echo -e "${YELLOW}Menginstal Apache, PHP, & Ekstensi...${NC}"
+    sudo apt-get update
+    sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-cli php-curl php-xml php-mbstring unzip
+
+    # Jika proyek Laravel memiliki package.json untuk build aset frontend (Mix/Vite)
+    if [ -f "package.json" ]; then
+        if ! command -v node &> /dev/null; then
+            echo -e "${YELLOW}Menginstal Node.js untuk kompilasi aset...${NC}"
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+        fi
+        echo -e "${YELLOW}Menginstal & Building Aset Frontend...${NC}"
+        npm install && (npm run build 2>/dev/null || npm run dev 2>/dev/null)
+    fi
+
+    # Install dependensi Composer
+    if [ -f "composer.json" ]; then
+        if ! command -v composer &> /dev/null; then
+            echo -e "${YELLOW}Menginstal Composer...${NC}"
+            curl -sS https://getcomposer.org/installer | php
+            sudo mv composer.phar /usr/local/bin/composer
+        fi
+        composer install --no-dev
+    fi
+
+    # Konfigurasi khusus Laravel
+    if [ -f "artisan" ]; then
+        DOC_ROOT="$TARGET_DIR/public"
+        
+        if [ -f ".env.example" ] && [ ! -f ".env" ]; then
+            cp .env.example .env
+            php artisan key:generate
+        fi
+    else
+        DOC_ROOT="$TARGET_DIR"
+    fi
+
+    # Atur Hak Akses Folder Web Server
+    sudo chown -R www-data:www-data "$TARGET_DIR"
+    sudo chmod -R 775 "$TARGET_DIR"
+
+    # Buat VirtualHost Apache
+    VHOST_CONF="/etc/apache2/sites-available/$REPO_NAME.conf"
+    echo "<VirtualHost *:80>
+        ServerAdmin webmaster@localhost
+        DocumentRoot $DOC_ROOT
+        <Directory $DOC_ROOT>
+            Options Indexes FollowSymLinks
+            AllowOverride All
+            Require all granted
+        </Directory>
+        ErrorLog \${APACHE_LOG_DIR}/error.log
+        CustomLog \${APACHE_LOG_DIR}/access.log combined
+    </VirtualHost>" | sudo tee "$VHOST_CONF" > /dev/null
+
+    sudo a2dissite 000-default.conf 2>/dev/null
+    sudo a2ensite "$REPO_NAME.conf"
+    sudo a2enmod rewrite
+    sudo systemctl restart apache2
+    
+    PORT=80
+
+# PRIORITAS 2: Aplikasi Murni Node.js (Express / React / Next / Vue)
+elif [ -f "package.json" ]; then
+    echo -e "${GREEN}[TERDETEKSI] Aplikasi Node.js Murni${NC}"
     
     if ! command -v node &> /dev/null; then
         echo -e "${YELLOW}Menginstal Node.js...${NC}"
@@ -72,56 +140,7 @@ if [ -f "package.json" ]; then
         pm2 start index.js --name "$REPO_NAME" 2>/dev/null || pm2 start app.js --name "$REPO_NAME"
     fi
 
-elif [ -f "composer.json" ] || ls *.php &>/dev/null; then
-    echo -e "${GREEN}[TERDETEKSI] Aplikasi PHP / Laravel${NC}"
-    
-    echo -e "${YELLOW}Menginstal Apache, PHP, & Ekstensi...${NC}"
-    sudo apt-get update
-    sudo apt-get install -y apache2 php libapache2-mod-php php-mysql php-cli php-curl php-xml php-mbstring unzip
-
-    if [ -f "composer.json" ]; then
-        if ! command -v composer &> /dev/null; then
-            echo -e "${YELLOW}Menginstal Composer...${NC}"
-            curl -sS https://getcomposer.org/installer | php
-            sudo mv composer.phar /usr/local/bin/composer
-        fi
-        composer install --no-dev
-    fi
-
-    if [ -f "artisan" ]; then
-        DOC_ROOT="$TARGET_DIR/public"
-        
-        if [ -f ".env.example" ] && [ ! -f ".env" ]; then
-            cp .env.example .env
-            php artisan key:generate
-        fi
-    else
-        DOC_ROOT="$TARGET_DIR"
-    fi
-
-    sudo chown -R www-data:www-data "$TARGET_DIR"
-    sudo chmod -R 775 "$TARGET_DIR"
-
-    VHOST_CONF="/etc/apache2/sites-available/$REPO_NAME.conf"
-    echo "<VirtualHost *:80>
-        ServerAdmin webmaster@localhost
-        DocumentRoot $DOC_ROOT
-        <Directory $DOC_ROOT>
-            Options Indexes FollowSymLinks
-            AllowOverride All
-            Require all granted
-        </Directory>
-        ErrorLog \${APACHE_LOG_DIR}/error.log
-        CustomLog \${APACHE_LOG_DIR}/access.log combined
-    </VirtualHost>" | sudo tee "$VHOST_CONF" > /dev/null
-
-    sudo a2dissite 000-default.conf 2>/dev/null
-    sudo a2ensite "$REPO_NAME.conf"
-    sudo a2enmod rewrite
-    sudo systemctl restart apache2
-    
-    PORT=80
-
+# PRIORITAS 3: Aplikasi Python (Flask / Django)
 elif [ -f "requirements.txt" ]; then
     echo -e "${GREEN}[TERDETEKSI] Aplikasi Python (Flask/Django)${NC}"
     
@@ -135,6 +154,7 @@ elif [ -f "requirements.txt" ]; then
     PORT=5000
     nohup python3 app.py > app.log 2>&1 &
 
+# PRIORITAS 4: Web Statis (HTML/CSS/JS)
 else
     echo -e "${YELLOW}[TERDETEKSI] Situs Statis HTML/CSS/JS${NC}"
     sudo apt-get update
@@ -145,7 +165,7 @@ fi
 
 # 3. Deteksi & Install Database jika diperlukan
 echo -e "\n${YELLOW}[3/4] Memeriksa Kebutuhan Database...${NC}"
-read -p "Apakah aplikasi ini menggunakan MySQL Database? (y/n): " NEED_DB
+read -p "Apakah aplikasi ini menggunakan MySQL Database? (y/n): " NEED_DB < /dev/tty
 
 if [[ "$NEED_DB" =~ ^[Yy]$ ]]; then
     if ! command -v mysql &> /dev/null; then
@@ -154,10 +174,21 @@ if [[ "$NEED_DB" =~ ^[Yy]$ ]]; then
         sudo systemctl start mariadb
     fi
 
-    read -p "Masukkan Nama Database yang ingin dibuat: " DB_NAME
+    read -p "Masukkan Nama Database yang ingin dibuat: " DB_NAME < /dev/tty
     sudo mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`;"
     echo -e "${GREEN}Database '$DB_NAME' berhasil dibuat!${NC}"
 
+    # Jika Laravel, jalankan Artisan Migrate otomatis
+    if [ -f "artisan" ]; then
+        echo -e "${YELLOW}Menjalankan Laravel Migration...${NC}"
+        # Update setting .env untuk DB
+        sed -i "s/DB_DATABASE=.*/DB_DATABASE=$DB_NAME/" .env
+        sed -i "s/DB_USERNAME=.*/DB_USERNAME=root/" .env
+        sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=/" .env
+        php artisan migrate --force
+    fi
+
+    # Cari file .sql untuk di-import otomatis (jika ada)
     SQL_FILE=$(find . -maxdepth 2 -name "*.sql" | head -n 1)
     if [ -n "$SQL_FILE" ]; then
         echo -e "${YELLOW}Ditemukan berkas database: $SQL_FILE. Mengimpor data...${NC}"
