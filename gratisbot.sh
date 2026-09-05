@@ -18,7 +18,7 @@ echo -e "${BLUE}====================================================${NC}"
 echo ""
 
 # 1. Input Repository GitHub
-read -p "Masukkan Link Repository GitHub Proyek Kamu: " REPO_URL
+read -p "Masukkan Link Repository GitHub Proyek Kamu: " REPO_URL < /dev/tty
 
 if [ -z "$REPO_URL" ]; then
     echo -e "${RED}[ERROR] URL Repository tidak boleh kosong!${NC}"

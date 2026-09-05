@@ -30,4 +30,5 @@ Buka playground Ubuntu gratis di **[Killercoda Ubuntu Playground](https://killer
 Tempelkan perintah ini di terminal Killercoda:
 
 ```bash
-bash <(curl -sSL [https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh](https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh))
+curl -sSL [https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh](https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh) | bash
+```
