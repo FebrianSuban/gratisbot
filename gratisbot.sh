@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # ==============================================================================
-# GRATISBOT v2.0 - Universal Automated Deployment for Killercoda / Ubuntu
-# Supports: Laravel, Standard PHP, Node.js (Express/Nest), Python, Static HTML
+# GRATISBOT v4.0 - Universal & Deep-Technology Aware Auto-Deployment
+# Supports: Laravel, PHP, Node.js (SSR/SPA), Python (Django/Flask), 
+#           Ruby on Rails, Go, Java Spring Boot, Docker, & Static Web
 # ==============================================================================
 
-set -e # Hentikan eksekusi jika terjadi error fatal
+set -e
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -14,29 +15,25 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${CYAN}====================================================${NC}"
-echo -e "${CYAN}     GRATISBOT: UNIVERSAL ONE-CLICK DEPLOYMENT      ${NC}"
+echo -e "${CYAN}   GRATISBOT v4.0: UNIVERSAL AUTO-DEPLOY ENGINE     ${NC}"
 echo -e "${CYAN}====================================================${NC}"
 
-# ------------------------------------------------------------------------------
-# 1. SETUP LINGKUNGAN SERVER DASAR (SYSTEM PREPARATION)
-# ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}[1/6] Menyiapkan Paket Dasar Sistem & Web Server...${NC}"
-
-# Hindari interaksi prompt saat instalasi paket sistem
 export DEBIAN_FRONTEND=noninteractive
+export COMPOSER_ALLOW_SUPERUSER=1
 
+# ------------------------------------------------------------------------------
+# 1. PERSIAPAN SISTEM & DEPENDENSI DASAR
+# ------------------------------------------------------------------------------
+echo -e "\n${YELLOW}[1/6] Menginstal Sistem Base & Tools...${NC}"
 sudo apt-get update -y
 sudo apt-get install -y curl wget git unzip software-properties-common ufw \
-                        apache2 libapache2-mod-fcgid mariadb-server mariadb-client
+                        apache2 libapache2-mod-fcgid mariadb-server mariadb-client jq
 
-# Konfigurasi Git Safe Directory untuk mencegah error 'dubious ownership'
 git config --global --add safe.directory "*"
-
-# Enable modul Apache dasar
-sudo a2enmod rewrite headers proxy proxy_http
+sudo a2enmod rewrite headers proxy proxy_http proxy_balancer lbmethod_byrequests 2>/dev/null || true
 
 # ------------------------------------------------------------------------------
-# 2. INPUT & KLONING REPOSITORI
+# 2. KLONING REPOSITORI GITHUB
 # ------------------------------------------------------------------------------
 echo -e "\n${YELLOW}[2/6] Mengambil Repositori GitHub...${NC}"
 read -p "Masukkan URL Repository GitHub: " REPO_URL < /dev/tty
@@ -49,7 +46,6 @@ fi
 REPO_NAME=$(basename "$REPO_URL" .git)
 TARGET_DIR="/var/www/$REPO_NAME"
 
-# Bersihkan direktori jika sudah pernah di-deploy sebelumnya
 if [ -d "$TARGET_DIR" ]; then
     echo -e "${YELLOW}Membersihkan direktori lama di $TARGET_DIR...${NC}"
     sudo rm -rf "$TARGET_DIR"
@@ -60,195 +56,255 @@ sudo git clone "$REPO_URL" "$TARGET_DIR"
 cd "$TARGET_DIR"
 
 # ------------------------------------------------------------------------------
-# 3. DETEKSI OTOMATIS TEKNOLOGI PROYEK
+# 3. DETEKSI OTOMATIS FRAMEWORK & BAHASA PEMROGRAMAN
 # ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}[3/6] Menganalisis Struktur Proyek...${NC}"
+echo -e "\n${YELLOW}[3/6] Menganalisis Arsitektur Proyek & Tech Stack...${NC}"
 
-PROJECT_TYPE="UNKNOWN"
+FRAMEWORK="UNKNOWN"
+PORT_APP=8080
 
-if [ -f "artisan" ]; then
-    PROJECT_TYPE="LARAVEL"
+if [ -f "Dockerfile" ] || [ -f "docker-compose.yml" ]; then
+    FRAMEWORK="DOCKER"
+elif [ -f "artisan" ]; then
+    FRAMEWORK="LARAVEL"
 elif [ -f "composer.json" ] || [ -f "index.php" ]; then
-    PROJECT_TYPE="PHP"
+    FRAMEWORK="PHP"
 elif [ -f "package.json" ]; then
-    PROJECT_TYPE="NODE"
-elif [ -f "requirements.txt" ] || [ -f "manage.py" ] || [ -f "app.py" ]; then
-    PROJECT_TYPE="PYTHON"
+    if grep -q '"next"' package.json 2>/dev/null || grep -q '"react"' package.json 2>/dev/null || grep -q '"vue"' package.json 2>/dev/null; then
+        FRAMEWORK="NODE_FRONTEND"
+    else
+        FRAMEWORK="NODE_BACKEND"
+    fi
+    PORT_APP=3000
+elif [ -f "manage.py" ]; then
+    FRAMEWORK="DJANGO"
+    PORT_APP=8000
+elif [ -f "app.py" ] || [ -f "wsgi.py" ] || [ -f "requirements.txt" ]; then
+    FRAMEWORK="PYTHON_FLASK"
+    PORT_APP=5000
+elif [ -f "Gemfile" ]; then
+    FRAMEWORK="RUBY_RAILS"
+    PORT_APP=3000
+elif [ -f "go.mod" ] || [ -f "main.go" ]; then
+    FRAMEWORK="GOLANG"
+    PORT_APP=8080
+elif [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+    FRAMEWORK="JAVA_SPRING"
+    PORT_APP=8080
 elif [ -f "index.html" ]; then
-    PROJECT_TYPE="STATIC"
+    FRAMEWORK="STATIC"
 fi
 
-echo -e "${CYAN}Tipe Proyek Terdeteksi: [ $PROJECT_TYPE ]${NC}"
+echo -e "${CYAN}Tech Stack Terdeteksi : [ $FRAMEWORK ]${NC}"
 
 # ------------------------------------------------------------------------------
-# 4. INSTALASI RUNTIME BERDASARKAN DETEKSI
+# 4. DEPLOYMENT & INSTALLATION ENGINE (ADAPTIF SEPENUHNYA)
 # ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}[4/6] Menginstal Runtime & Dependency yang Sesuai...${NC}"
+echo -e "\n${YELLOW}[4/6] Mengonfigurasi Runtime Environment...${NC}"
 
-case $PROJECT_TYPE in
-    LARAVEL)
-        echo -e "${YELLOW}Menyiapkan PPA Ondrej & PHP 7.4 (Kompatibilitas Laravel 8/9)...${NC}"
+case $FRAMEWORK in
+    LARAVEL|PHP)
+        PHP_VER="7.4" # Fallback dasar jika tidak ada spesifikasi di composer
+        if [ -f "composer.json" ]; then
+            if grep -q '"php":' composer.json; then
+                REQ_PHP=$(grep -i '"php"' composer.json | head -n 1)
+                if echo "$REQ_PHP" | grep -qE '8\.3|8\.2'; then PHP_VER="8.2";
+                elif echo "$REQ_PHP" | grep -qE '8\.1'; then PHP_VER="8.1";
+                elif echo "$REQ_PHP" | grep -qE '8\.0'; then PHP_VER="8.0";
+                elif echo "$REQ_PHP" | grep -qE '7\.4|7\.3|7\.2'; then PHP_VER="7.4"; fi
+            fi
+        fi
+
+        echo -e "${YELLOW}Menginstal PHP $PHP_VER & Ekstensi Komplit...${NC}"
         sudo add-apt-repository -y ppa:ondrej/php
         sudo apt-get update -y
-        sudo apt-get install -y php7.4 php7.4-cli php7.4-common php7.4-mysql php7.4-xml \
-                                php7.4-curl php7.4-mbstring php7.4-zip php7.4-gd \
-                                libapache2-mod-php7.4 composer
-        
-        sudo a2dismod php8.* 2>/dev/null || true
-        sudo a2enmod php7.4
-        
-        # Install Node.js untuk kompilasi Mix/Vite jika ada
+        sudo apt-get install -y php$PHP_VER php$PHP_VER-cli php$PHP_VER-common \
+                                php$PHP_VER-mysql php$PHP_VER-xml php$PHP_VER-curl \
+                                php$PHP_VER-mbstring php$PHP_VER-zip php$PHP_VER-gd \
+                                php$PHP_VER-bcmath php$PHP_VER-intl php$PHP_VER-tokenizer \
+                                php$PHP_VER-sqlite3 libapache2-mod-php$PHP_VER composer
+
+        sudo update-alternatives --set php /usr/bin/php$PHP_VER
+        sudo a2dismod php* 2>/dev/null || true
+        sudo a2enmod php$PHP_VER
+
+        if [ -f "composer.json" ]; then
+            php$PHP_VER /usr/bin/composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-reqs
+        fi
+
+        if [ "$FRAMEWORK" == "LARAVEL" ]; then
+            [ ! -f ".env" ] && ([ -f ".env.example" ] && cp .env.example .env || touch .env)
+            sed -i 's|APP_URL=.*|APP_URL=|' .env
+            grep -q "^ASSET_URL=" .env && sed -i 's|ASSET_URL=.*|ASSET_URL=.|' .env || echo "ASSET_URL=." >> .env
+            php$PHP_VER artisan key:generate --force
+            php$PHP_VER artisan storage:link --force 2>/dev/null || true
+            sudo chmod -R 777 storage bootstrap/cache
+            DOC_ROOT="$TARGET_DIR/public"
+        else
+            DOC_ROOT="$TARGET_DIR"
+        fi
+
         if [ -f "package.json" ]; then
             sudo apt-get install -y nodejs npm
+            npm install
+            npm run prod 2>/dev/null || npm run build 2>/dev/null || true
         fi
         ;;
 
-    PHP)
-        echo -e "${YELLOW}Menginstal PHP Native & Composer...${NC}"
-        sudo apt-get install -y php php-cli php-mysql php-xml php-curl php-mbstring php-zip composer libapache2-mod-php
-        ;;
-
-    NODE)
+    NODE_BACKEND|NODE_FRONTEND)
         echo -e "${YELLOW}Menginstal Node.js Runtime & PM2 Process Manager...${NC}"
         sudo apt-get install -y nodejs npm
         sudo npm install -g pm2
+        npm install
+
+        if [ "$FRAMEWORK" == "NODE_FRONTEND" ] && grep -q '"build":' package.json; then
+            npm run build
+            DOC_ROOT="$TARGET_DIR/dist"
+            [ ! -d "$DOC_ROOT" ] && DOC_ROOT="$TARGET_DIR/build"
+            [ ! -d "$DOC_ROOT" ] && DOC_ROOT="$TARGET_DIR/out"
+        else
+            pm2 stop "$REPO_NAME" 2>/dev/null || true
+            pm2 start npm --name "$REPO_NAME" -- start 2>/dev/null || pm2 start index.js --name "$REPO_NAME"
+            pm2 save
+            IS_PROXY=true
+        fi
         ;;
 
-    PYTHON)
-        echo -e "${YELLOW}Menginstal Python3, Pip, dan Virtual environment...${NC}"
-        sudo apt-get install -y python3 python3-pip python3-venv
+    DJANGO|PYTHON_FLASK)
+        echo -e "${YELLOW}Menginstal Python3, Virtualenv, & Gunicorn...${NC}"
+        sudo apt-get install -y python3 python3-pip python3-venv gunicorn
+        python3 -m venv venv
+        source venv/bin/activate
+        
+        if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+        fi
+
+        pip install gunicorn
+
+        if [ "$FRAMEWORK" == "DJANGO" ]; then
+            python3 manage.py migrate 2>/dev/null || true
+            python3 manage.py collectstatic --noinput 2>/dev/null || true
+            
+            WSGI_MODULE=$(find . -name "wsgi.py" | head -n 1 | cut -d'/' -f2)
+            pm2 stop "$REPO_NAME" 2>/dev/null || true
+            pm2 start "venv/bin/gunicorn ${WSGI_MODULE}.wsgi:application --bind 127.0.0.1:$PORT_APP" --name "$REPO_NAME"
+        else
+            APP_FILE="app:app"
+            [ -f "main.py" ] && APP_FILE="main:app"
+            pm2 stop "$REPO_NAME" 2>/dev/null || true
+            pm2 start "venv/bin/gunicorn $APP_FILE --bind 127.0.0.1:$PORT_APP" --name "$REPO_NAME"
+        fi
+        pm2 save
+        IS_PROXY=true
+        ;;
+
+    RUBY_RAILS)
+        echo -e "${YELLOW}Menginstal Ruby & Bundler...${NC}"
+        sudo apt-get install -y ruby-full build-essential libsqlite3-dev
+        sudo gem install bundler
+        bundle install
+        rails db:migrate 2>/dev/null || true
+        rails assets:precompile 2>/dev/null || true
+        pm2 stop "$REPO_NAME" 2>/dev/null || true
+        pm2 start "bundle exec rails server -p $PORT_APP -b 127.0.0.1 -e production" --name "$REPO_NAME"
+        pm2 save
+        IS_PROXY=true
+        ;;
+
+    GOLANG)
+        echo -e "${YELLOW}Menginstal Go Compiler & Build Binary...${NC}"
+        sudo apt-get install -y golang-go
+        go build -o app_binary
+        pm2 stop "$REPO_NAME" 2>/dev/null || true
+        pm2 start "./app_binary" --name "$REPO_NAME"
+        pm2 save
+        IS_PROXY=true
+        ;;
+
+    JAVA_SPRING)
+        echo -e "${YELLOW}Menginstal OpenJDK & Building Spring Boot...${NC}"
+        sudo apt-get install -y openjdk-17-jdk maven gradle
+        if [ -f "mvnw" ]; then ./mvnw clean package -DskipTests
+        elif [ -f "gradlew" ]; then ./gradlew build -x test
+        else mvn clean package -DskipTests; fi
+
+        JAR_FILE=$(find target/ build/libs/ -name "*.jar" | head -n 1)
+        pm2 stop "$REPO_NAME" 2>/dev/null || true
+        pm2 start "java -jar $JAR_FILE --server.port=$PORT_APP" --name "$REPO_NAME"
+        pm2 save
+        IS_PROXY=true
+        ;;
+
+    DOCKER)
+        echo -e "${YELLOW}Menginstal Docker Engine & Docker Compose...${NC}"
+        sudo apt-get install -y docker.io docker-compose
+        sudo systemctl start docker
+        sudo systemctl enable docker
+
+        if [ -f "docker-compose.yml" ]; then
+            sudo docker-compose up -d --build
+        else
+            sudo docker build -t "$REPO_NAME" .
+            sudo docker run -d -p $PORT_APP:80 --name "$REPO_NAME" "$REPO_NAME"
+        fi
+        IS_PROXY=true
         ;;
 
     STATIC)
-        echo -e "${GREEN}Tidak memerlukan runtime tambahan untuk file statis.${NC}"
+        DOC_ROOT="$TARGET_DIR"
         ;;
 esac
 
 # ------------------------------------------------------------------------------
-# 5. OTOMATISASI DATABASE (MARIADB)
+# 5. DATABASE AUTOMATION (MARIADB)
 # ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}[5/6] Mengonfigurasi Layanan Database...${NC}"
-
+echo -e "\n${YELLOW}[5/6] Penyiapan Database MySQL/MariaDB...${NC}"
 sudo systemctl start mariadb
-
-# Buat User Dedicated untuk mengatasi hambatan unix_socket root
 sudo mysql -e "CREATE USER IF NOT EXISTS 'gratisbot'@'localhost' IDENTIFIED BY 'gratisbot123';"
 sudo mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'gratisbot'@'localhost' WITH GRANT OPTION;"
 sudo mysql -e "FLUSH PRIVILEGES;"
 
-# Cari apakah ada file .sql bawaan di dalam repositori
 SQL_FILE=$(find . -maxdepth 2 -name "*.sql" | head -n 1)
 
-read -p "Apakah proyek ini membutuhkan Database MySQL/MariaDB? (y/n): " NEED_DB < /dev/tty
+read -p "Apakah aplikasi ini memerlukan Database MySQL/MariaDB? (y/n): " NEED_DB < /dev/tty
 
 if [[ "$NEED_DB" =~ ^[Yy]$ ]]; then
     read -p "Masukkan Nama Database: " DB_NAME < /dev/tty
     if [ -z "$DB_NAME" ]; then DB_NAME="$REPO_NAME"; fi
 
     sudo mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\`;"
-    echo -e "${GREEN}Database '$DB_NAME' siap digunakan!${NC}"
 
-    # Impor otomatis file .sql jika ditemukan
     if [ -n "$SQL_FILE" ]; then
-        echo -e "${YELLOW}Mengimpor file database bawaan ($SQL_FILE)...${NC}"
+        echo -e "${YELLOW}Mengimpor file skema database ($SQL_FILE)...${NC}"
         sudo mysql "$DB_NAME" < "$SQL_FILE"
-        echo -e "${GREEN}Impor database selesai!${NC}"
+    fi
+
+    # Auto Inject Konfigurasi DB ke File Environment
+    if [ -f ".env" ]; then
+        sed -i "s/DB_HOST=.*/DB_HOST=127.0.0.1/" .env 2>/dev/null || true
+        sed -i "s/DB_DATABASE=.*/DB_DATABASE=$DB_NAME/" .env 2>/dev/null || true
+        sed -i "s/DB_NAME=.*/DB_NAME=$DB_NAME/" .env 2>/dev/null || true
+        sed -i "s/DB_USERNAME=.*/DB_USERNAME=gratisbot/" .env 2>/dev/null || true
+        sed -i "s/DB_USER=.*/DB_USER=gratisbot/" .env 2>/dev/null || true
+        sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=gratisbot123/" .env 2>/dev/null || true
+        sed -i "s/DB_PASS=.*/DB_PASS=gratisbot123/" .env 2>/dev/null || true
     fi
 fi
 
-# ------------------------------------------------------------------------------
-# 6. SETUP SPESIFIK FRAMEWORK & RUNTIME
-# ------------------------------------------------------------------------------
-echo -e "\n${YELLOW}[6/6] Menjalankan Build & Finalisasi Konfigurasi...${NC}"
-
-case $PROJECT_TYPE in
-    LARAVEL)
-        # 1. Handling .env
-        [ ! -f ".env" ] && ([ -f ".env.example" ] && cp .env.example .env || touch .env)
-
-        # 2. Fix HTTPS Mixed Content (Reverse Proxy Killercoda) & DB Connection
-        sed -i 's|APP_URL=.*|APP_URL=|' .env
-        grep -q "^ASSET_URL=" .env && sed -i 's|ASSET_URL=.*|ASSET_URL=.|' .env || echo "ASSET_URL=." >> .env
-        
-        if [ -n "$DB_NAME" ]; then
-            sed -i "s/DB_HOST=.*/DB_HOST=127.0.0.1/" .env
-            sed -i "s/DB_DATABASE=.*/DB_DATABASE=$DB_NAME/" .env
-            sed -i "s/DB_USERNAME=.*/DB_USERNAME=gratisbot/" .env
-            sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=gratisbot123/" .env
-        fi
-
-        # 3. Dependencies, Encryption Key, & Permissions
-        composer install --no-interaction --prefer-dist --optimize-autoloader
-        php7.4 artisan key:generate --force
-        php7.4 artisan storage:link --force 2>/dev/null || true
-        sudo chmod -R 777 storage bootstrap/cache
-
-        # 4. Run Migration jika tidak ada file SQL
-        if [ -z "$SQL_FILE" ] && [ -n "$DB_NAME" ]; then
-            php7.4 artisan migrate:fresh --seed --force
-        fi
-
-        # 5. Build Assets (JS/CSS)
-        if [ -f "package.json" ]; then
-            npm install
-            npm run prod 2>/dev/null || npm run build 2>/dev/null || npm run dev 2>/dev/null || true
-        fi
-
-        php7.4 artisan config:clear
-        php7.4 artisan view:clear
-        
-        DOC_ROOT="$TARGET_DIR/public"
-        ;;
-
-    PHP)
-        if [ -f "composer.json" ]; then
-            composer install --no-interaction
-        fi
-        
-        # Konfigurasi database umum jika file .env ada
-        if [ -f ".env" ] && [ -n "$DB_NAME" ]; then
-            sed -i "s/DB_HOST=.*/DB_HOST=127.0.0.1/" .env
-            sed -i "s/DB_NAME=.*/DB_NAME=$DB_NAME/" .env
-            sed -i "s/DB_USER=.*/DB_USER=gratisbot/" .env
-            sed -i "s/DB_PASS=.*/DB_PASS=gratisbot123/" .env
-        fi
-        
-        DOC_ROOT="$TARGET_DIR"
-        ;;
-
-    NODE)
-        npm install
-        
-        # Jalankan aplikasi menggunakan PM2 di background pada port 3000
-        pm2 stop "$REPO_NAME" 2>/dev/null || true
-        pm2 start npm --name "$REPO_NAME" -- start || pm2 start index.js --name "$REPO_NAME"
-        pm2 save
-        
-        DOC_ROOT="$TARGET_DIR"
-        ;;
-
-    PYTHON)
-        python3 -m venv venv
-        source venv/bin/activate
-        if [ -f "requirements.txt" ]; then
-            pip install -r requirements.txt
-        fi
-        
-        DOC_ROOT="$TARGET_DIR"
-        ;;
-
-    STATIC)
-        DOC_ROOT="$TARGET_DIR"
-        ;;
-esac
+# Run Migration khusus Laravel jika DB kosong
+if [ "$FRAMEWORK" == "LARAVEL" ] && [ -z "$SQL_FILE" ] && [ -n "$DB_NAME" ]; then
+    php$PHP_VER artisan migrate:fresh --seed --force 2>/dev/null || php$PHP_VER artisan migrate --force 2>/dev/null || true
+fi
 
 # ------------------------------------------------------------------------------
-# 7. KONFIGURASI APACHE VIRTUALHOST & PROXY
+# 6. PENYESUAIAN SERVER WEB (APACHE ARCHITECTURE)
 # ------------------------------------------------------------------------------
+echo -e "\n${YELLOW}[6/6] Menyiapkan Apache VirtualHost & Routing...${NC}"
 VHOST_CONF="/etc/apache2/sites-available/$REPO_NAME.conf"
 
-if [ "$PROJECT_TYPE" == "NODE" ]; then
-    # Proxy Pass ke Node.js App (Port 3000)
+if [ "$IS_PROXY" = true ]; then
+    # Jika berbasis Application Server (Node, Python, Go, Java, Docker, Rails) -> Gunakan Reverse Proxy
     sudo bash -c "cat <<EOF > $VHOST_CONF
 <VirtualHost *:80>
     ServerName localhost
@@ -258,12 +314,13 @@ if [ "$PROJECT_TYPE" == "NODE" ]; then
     <Proxy *>
         Require all granted
     </Proxy>
-    ProxyPass / http://127.0.0.1:3000/
-    ProxyPassReverse / http://127.0.0.1:3000/
+    ProxyPass / http://127.0.0.1:$PORT_APP/
+    ProxyPassReverse / http://127.0.0.1:$PORT_APP/
 </VirtualHost>
 EOF"
 else
-    # Standar VirtualHost Apache untuk PHP/Laravel/Statis
+    # Jika berbasis File Server (PHP, Laravel, Static HTML, React/Vue Dist)
+    [ -z "$DOC_ROOT" ] && DOC_ROOT="$TARGET_DIR"
     sudo bash -c "cat <<EOF > $VHOST_CONF
 <VirtualHost *:80>
     ServerAdmin webmaster@localhost
@@ -281,21 +338,17 @@ else
 EOF"
 fi
 
-# Aktifkan Site Baru & Restart Apache
 sudo a2dissite 000-default.conf 2>/dev/null || true
 sudo a2ensite "$REPO_NAME.conf"
 sudo systemctl restart apache2
 
 # ------------------------------------------------------------------------------
-# RINGKASAN HASIL DEPLOYMENT
+# FINISH & SUMMARY
 # ------------------------------------------------------------------------------
 echo -e "\n${GREEN}====================================================${NC}"
-echo -e "${GREEN}      DEPLOYMENT BERHASIL! APLIKASI SIAP DEMO       ${NC}"
+echo -e "${GREEN}      DEPLOYMENT SELESAI DAN BERJALAN SUKSES!      ${NC}"
 echo -e "${GREEN}====================================================${NC}"
-echo -e "Tipe Proyek : ${CYAN}$PROJECT_TYPE${NC}"
-echo -e "Direktori   : ${CYAN}$TARGET_DIR${NC}"
-echo -e "Port Publik : ${CYAN}80${NC}"
-echo -e "\nLangkah Akses di Killercoda:"
-echo -e "1. Klik tombol ${YELLOW}'Traffic / Ports'${NC} pada panel atas Killercoda."
-echo -e "2. Ketikkan nomor Port: ${YELLOW}80${NC}"
-echo -e "3. Klik ${GREEN}'Access'${NC} untuk melihat aplikasi publik kamu."
+echo -e "Framework    : ${CYAN}$FRAMEWORK${NC}"
+echo -e "Lokasi Proyek: ${CYAN}$TARGET_DIR${NC}"
+echo -e "Port Web     : ${CYAN}80${NC}"
+echo -e "\nBuka Killercoda menu ${YELLOW}'Traffic / Ports'${NC} -> Masukkan port ${YELLOW}80${NC}."
