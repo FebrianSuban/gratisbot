@@ -2,8 +2,7 @@
 
 # ==============================================================================
 # GRATISBOT v4.0 - Universal & Deep-Technology Aware Auto-Deployment Engine
-# Fixed: Standalone Composer binary, PHP extension binder, Allow-Plugins bypass,
-#        & Apache permissions automation
+# Fixed: Global allow-plugins bypass, standalone Composer, & Apache permissions
 # ==============================================================================
 
 set -e
@@ -140,8 +139,9 @@ case $FRAMEWORK in
         sudo a2enmod php$PHP_VER
 
         if [ -f "composer.json" ]; then
-            echo -e "${YELLOW}Menjalankan Composer Install (Bypassing plugin restrictions)...${NC}"
-            /usr/local/bin/composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-reqs --no-plugins
+            echo -e "${YELLOW}Menjalankan Composer Install (Bypassing allow-plugins secara global)...${NC}"
+            /usr/local/bin/composer config --global allow-plugins.* true 2>/dev/null || true
+            /usr/local/bin/composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-reqs
         fi
 
         if [ "$FRAMEWORK" == "LARAVEL" ]; then
