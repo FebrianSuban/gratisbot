@@ -5,6 +5,7 @@
 
 set -Eeuo pipefail
 IFS=$'\n\t'
+export COMPOSER_ALLOW_SUPERUSER=1
 
 readonly SCRIPT_NAME="GRATISBOT Laravel Deployer"
 readonly GREEN='\033[0;32m'
@@ -59,12 +60,8 @@ install_host_packages() {
     apt-get update -y
     apt-get install -y ca-certificates curl git unzip apache2
 
-    if ! command -v php >/dev/null 2>&1; then
-        apt-get install -y "php${PHP_VERSION}" "php${PHP_VERSION}-cli" "php${PHP_VERSION}-common" \
-            "php${PHP_VERSION}-mysql" "php${PHP_VERSION}-xml" "php${PHP_VERSION}-curl" \
-            "php${PHP_VERSION}-mbstring" "php${PHP_VERSION}-zip" "php${PHP_VERSION}-bcmath" \
-            "libapache2-mod-php${PHP_VERSION}"
-    fi
+    apt-get install -y php-cli php-common php-mysql php-xml php-curl php-mbstring \
+        php-zip php-bcmath php-intl php-gd libapache2-mod-php
 
     if ! command -v composer >/dev/null 2>&1; then
         curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
@@ -206,6 +203,7 @@ validate_inputs
 install_host_packages
 require_command php
 require_command composer
+    php -m | grep -qx 'dom' || die "Ekstensi PHP DOM belum aktif setelah instalasi php-xml."
 preflight_repository
 confirm_deploy
 deploy
