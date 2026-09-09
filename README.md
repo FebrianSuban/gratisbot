@@ -153,7 +153,7 @@ Jika `DB_CONNECTION=mysql` atau `mariadb`, wizard memasang dan menyalakan MariaD
 
 Wizard menjalankan tahapan berikut secara berurutan:
 
-1. `composer install --no-dev`.
+1. `composer install --no-dev`. Jika `composer.lock` mengunci package lama yang tidak kompatibel dengan PHP aktif, wizard menjalankan `composer update --with-all-dependencies` lalu mengulang install.
 2. `npm install` dan `npm run build` jika `package.json` ditemukan.
 3. Membersihkan cache konfigurasi, route, dan view Laravel.
 4. Membuat link storage.
@@ -163,6 +163,16 @@ Wizard menjalankan tahapan berikut secara berurutan:
 8. Mengaktifkan release baru melalui web server.
 
 Wizard tidak menjalankan `migrate:fresh` karena perintah tersebut dapat menghapus seluruh data production.
+
+### Dependency PHP Lama
+
+Contoh error yang ditangani otomatis:
+
+```text
+nette/schema ... requires php <8.2 -> your php version (8.3) does not satisfy
+```
+
+Dalam kasus ini, masalahnya ada pada versi package di `composer.lock`. Wizard tidak memakai `--ignore-platform-reqs`, karena aplikasi dapat berjalan dengan dependency yang sebenarnya tidak kompatibel. Wizard memperbarui dependency dengan batasan yang ada di `composer.json`. Jika `composer.json` sendiri memang membatasi PHP ke versi lama, langkah tersebut tetap gagal dan wizard akan meminta Anda memilih berhenti atau melanjutkan.
 
 ## Penanganan Error Dan Resume
 

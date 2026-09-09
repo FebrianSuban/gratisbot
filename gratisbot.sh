@@ -247,6 +247,21 @@ EOF
     systemctl reload nginx
 }
 
+install_composer_dependencies() {
+    local project_dir="$1"
+    if composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
+        --working-dir="$project_dir"; then
+        return 0
+    fi
+
+    warn 'composer.lock tidak kompatibel dengan PHP atau dependency server saat ini.'
+    warn 'Mencari versi dependency terbaru yang kompatibel dan memperbarui composer.lock.'
+    composer update --no-dev --with-all-dependencies --prefer-dist --no-interaction \
+        --working-dir="$project_dir"
+    composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
+        --working-dir="$project_dir"
+}
+
 run_step() {
     local label="$1"; shift
     while true; do
@@ -283,7 +298,7 @@ deploy_steps() {
         PHASE=dependencies; save_state
     fi
     if [[ "$PHASE" == dependencies ]]; then
-        run_step 'Menginstal dependency Composer' bash -c 'composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --working-dir="$1"' _ "$RELEASE_DIR"
+        run_step 'Menginstal dependency Composer' install_composer_dependencies "$RELEASE_DIR"
         if [[ -f "$RELEASE_DIR/package.json" ]]; then
             apt-get install -y nodejs npm
             run_step 'Membangun asset frontend' bash -c 'cd "$1" && npm install && npm run build' _ "$RELEASE_DIR"
