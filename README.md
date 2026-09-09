@@ -92,7 +92,7 @@ Direktori deploy wajib berada di bawah `/var/www`. Jika domain belum tersedia, g
 
 ### 4. Project Dianalisis
 
-Setelah source masuk, wizard memeriksa struktur Laravel dan menampilkan kebutuhan yang ditemukan, misalnya:
+Setelah source masuk, wizard memeriksa struktur Laravel, membaca constraint PHP dari Composer, lalu menampilkan kebutuhan yang ditemukan, misalnya:
 
 ```text
 Kebutuhan project terdeteksi:
@@ -102,6 +102,10 @@ Kebutuhan project terdeteksi:
 ```
 
 Deployment dihentikan jika file penting Laravel tidak ditemukan.
+
+Jika `composer.lock` berisi dependency lama yang membutuhkan PHP di bawah 8.2,
+wizard otomatis memilih dan memasang PHP 8.1. Batas di bawah 8.3 memilih PHP 8.2;
+project modern memakai PHP 8.3. Runtime ini dipasang sebelum Composer dijalankan.
 
 ### 5. Environment Dan Database
 
@@ -153,14 +157,15 @@ Jika `DB_CONNECTION=mysql` atau `mariadb`, wizard memasang dan menyalakan MariaD
 
 Wizard menjalankan tahapan berikut secara berurutan:
 
-1. `composer install --no-dev`. Jika `composer.lock` mengunci package lama yang tidak kompatibel dengan PHP aktif, wizard menjalankan `composer update --with-all-dependencies` lalu mengulang install.
-2. `npm install` dan `npm run build` jika `package.json` ditemukan.
-3. Membersihkan cache konfigurasi, route, dan view Laravel.
-4. Membuat link storage.
-5. Menjalankan `php artisan migrate --force`.
-6. Menjalankan `php artisan optimize`.
-7. Mengatur permission `storage` dan `bootstrap/cache`.
-8. Mengaktifkan release baru melalui web server.
+1. Memasang PHP runtime yang sesuai dengan constraint Composer.
+2. `composer install --no-dev`. Jika lock tetap tidak kompatibel, wizard menjalankan `composer update --with-all-dependencies` lalu mengulang install.
+3. `npm install` dan `npm run build` jika `package.json` ditemukan.
+4. Membersihkan cache konfigurasi, route, dan view Laravel.
+5. Membuat link storage.
+6. Menjalankan `php artisan migrate --force`.
+7. Menjalankan `php artisan optimize`.
+8. Mengatur permission `storage` dan `bootstrap/cache`.
+9. Mengaktifkan release baru melalui web server.
 
 Wizard tidak menjalankan `migrate:fresh` karena perintah tersebut dapat menghapus seluruh data production.
 

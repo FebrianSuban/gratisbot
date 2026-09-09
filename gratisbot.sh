@@ -12,6 +12,7 @@ readonly RED='\033[0;31m'
 readonly NC='\033[0m'
 readonly STATE_DIR=/var/lib/gratisbot
 readonly STATE_FILE=$STATE_DIR/deploy.state
+PHP_VERSION=8.3
 
 log() { printf '%b\n' "${CYAN}[gratisbot]${NC} $*"; }
 ok() { printf '%b\n' "${GREEN}[ok]${NC} $*"; }
@@ -42,6 +43,7 @@ DEPLOY_BRANCH=$(printf '%q' "$DEPLOY_BRANCH")
 DOMAIN=$(printf '%q' "$DOMAIN")
 DEPLOY_DIR=$(printf '%q' "$DEPLOY_DIR")
 APP_SLUG=$(printf '%q' "$APP_SLUG")
+PHP_VERSION=$(printf '%q' "$PHP_VERSION")
 STAGING_DIR=$(printf '%q' "$STAGING_DIR")
 RELEASE_DIR=$(printf '%q' "$RELEASE_DIR")
 PHASE=$(printf '%q' "$PHASE")
@@ -114,11 +116,11 @@ validate_choices() {
 }
 
 install_php_stack() {
-    local php_version
-    if command -v php >/dev/null 2>&1; then
-        php_version="$(php -r 'printf("%d.%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);')"
-    else
-        php_version=8.3
+    local php_version="$PHP_VERSION"
+    if ! apt-cache show "php${php_version}-cli" >/dev/null 2>&1; then
+        apt-get install -y software-properties-common
+        add-apt-repository -y ppa:ondrej/php
+        apt-get update -y
     fi
     log "Memasang PHP $php_version dan ekstensi project..."
     apt-get install -y "php${php_version}-cli" "php${php_version}-common" \
@@ -128,8 +130,20 @@ install_php_stack() {
         "php${php_version}-bcmath" "php${php_version}-intl" \
         "php${php_version}-gd" "libapache2-mod-php${php_version}"
     phpenmod -v "$php_version" -s cli dom xml sqlite3 pdo_sqlite 2>/dev/null || true
+    update-alternatives --set php "/usr/bin/php$php_version" >/dev/null 2>&1 || true
     php -r 'exit(extension_loaded("dom") && extension_loaded("pdo_sqlite") ? 0 : 1);' || \
         die "Ekstensi DOM atau PDO SQLite PHP belum aktif."
+    if [[ "$WEB_SERVER" == nginx ]]; then
+        apt-get install -y "php${php_version}-fpm"
+        systemctl enable --now "php${php_version}-fpm"
+    else
+        a2enmod rewrite headers >/dev/null
+        for module in /etc/apache2/mods-enabled/php*.load; do
+            [[ -e "$module" ]] || continue
+            a2dismod "$(basename "$module" .load)" >/dev/null 2>&1 || true
+        done
+        a2enmod "php${php_version}" >/dev/null
+    fi
     if ! command -v composer >/dev/null 2>&1; then
         curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
     fi
@@ -140,15 +154,6 @@ setup_server() {
     log "Menyiapkan $WEB_SERVER..."
     apt-get update -y
     apt-get install -y ca-certificates curl git unzip "$WEB_SERVER"
-    install_php_stack
-    if [[ "$WEB_SERVER" == nginx ]]; then
-        local php_version
-        php_version="$(php -r 'printf("%d.%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);')"
-        apt-get install -y "php${php_version}-fpm"
-        systemctl enable --now "php${php_version}-fpm"
-    else
-        a2enmod rewrite headers >/dev/null
-    fi
 }
 
 clone_public() {
@@ -172,6 +177,14 @@ prepare_project() {
 
 analyze_project() {
     local requirements=()
+    PHP_VERSION=8.3
+    if grep -qE '"php"[[:space:]]*:[[:space:]]*"[^" ]*(7\.|8\.0|8\.1)' "$STAGING_DIR/composer.json" 2>/dev/null || \
+        grep -qE '<[[:space:]]*8\.2' "$STAGING_DIR/composer.lock" 2>/dev/null; then
+        PHP_VERSION=8.1
+    elif grep -qE '<[[:space:]]*8\.3' "$STAGING_DIR/composer.lock" 2>/dev/null; then
+        PHP_VERSION=8.2
+    fi
+    requirements+=("PHP $PHP_VERSION (disesuaikan dari Composer)")
     [[ -f "$STAGING_DIR/composer.json" ]] && requirements+=("Composer/PHP")
     [[ -f "$STAGING_DIR/package.json" ]] && requirements+=("Node.js/NPM asset build")
     grep -qE '^DB_CONNECTION=(mysql|mariadb)' "$STAGING_DIR/.env.example" 2>/dev/null && requirements+=("MySQL/MariaDB")
@@ -288,6 +301,10 @@ deploy_steps() {
     fi
     if [[ "$PHASE" == analyze ]]; then
         run_step 'Menganalisis project' analyze_project
+        PHASE=runtime; save_state
+    fi
+    if [[ "$PHASE" == runtime ]]; then
+        run_step "Memasang PHP $PHP_VERSION dan runtime web" install_php_stack
         RELEASE_DIR="$DEPLOY_DIR/releases/$(date +%Y%m%d%H%M%S)"
         mkdir -p "$RELEASE_DIR"
         cp -a "$STAGING_DIR/." "$RELEASE_DIR/"
