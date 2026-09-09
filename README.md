@@ -5,7 +5,7 @@ GRATISBOT adalah deployer satu perintah untuk aplikasi Laravel dari repository G
 ## Penggunaan
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh | sudo bash -s -- https://github.com/FebrianSuban/SISTEM_INFORMASI_MAHASISWA.git example.com /var/www/SISTEM_INFORMASI_MAHASISWA
+curl -fsSL https://github.com/FebrianSuban/gratisbot/raw/refs/heads/main/gratisbot.sh | sudo bash -s -- https://github.com/FebrianSuban/SISTEM_INFORMASI_MAHASISWA.git example.com /var/www/SISTEM_INFORMASI_MAHASISWA
 ```
 
 Skrip akan:
