@@ -1,50 +1,42 @@
 # GRATISBOT
 
-GRATISBOT adalah deployer satu perintah untuk aplikasi Laravel dari repository GitHub ke Ubuntu/Debian dengan Apache dan PHP production.
+GRATISBOT adalah wizard interaktif untuk mendeploy project Laravel ke Ubuntu/Debian dengan satu perintah.
 
-## Penggunaan
-
-```bash
-curl -fsSL https://github.com/FebrianSuban/gratisbot/raw/refs/heads/main/gratisbot.sh | sudo bash -s -- https://github.com/FebrianSuban/SISTEM_INFORMASI_MAHASISWA.git example.com /var/www/SISTEM_INFORMASI_MAHASISWA
-```
-
-URL repository adalah argumen setelah `--`; URL tersebut bukan hardcode di dalam
-skrip. Ganti URL itu dengan repository Laravel public yang ingin dideploy.
-
-Skrip akan:
-
-- memvalidasi URL, branch, hak akses, dan struktur Laravel sebelum deploy;
-- melakukan clone GitHub public tanpa meminta username atau password;
-- memeriksa atau memasang Git, PHP, Composer, Apache, dan ekstensi PHP;
-- meng-clone repository GitHub ke release baru;
-- memakai `.env` dari `/var/www/REPOSITORY/shared/.env` jika tersedia;
-- memasang driver database yang diperlukan; jika `.env` memakai SQLite, file database dibuat otomatis;
-- menjalankan `composer install`, cache Laravel, `migrate --force`, dan `optimize`;
-- mengaktifkan Apache ke `public/` melalui symlink `current`;
-- mempertahankan release lama sehingga kegagalan tidak mengganti release aktif.
-
-Skrip selalu meminta konfirmasi `DEPLOY` sebelum mengubah production. Untuk otomatisasi terkontrol, gunakan `AUTO_APPROVE=1`.
-
-## Konfigurasi production
-
-Sebelum menjalankan deploy pertama, siapkan file environment:
+## Menjalankan
 
 ```bash
-sudo mkdir -p /var/www/REPOSITORY/shared
-sudo nano /var/www/REPOSITORY/shared/.env
+curl -fsSL https://github.com/FebrianSuban/gratisbot/raw/refs/heads/main/gratisbot.sh | sudo bash
 ```
 
-Isi minimalnya dari `.env.example`, termasuk `APP_KEY`, `APP_URL`, dan kredensial database. Jangan commit `.env` atau menaruh password database di command line.
+Wizard kemudian akan meminta:
 
-Branch, versi PHP, dan mode konfirmasi dapat diatur melalui environment. Kredensial
-database serta `APP_KEY` tetap dibaca dari `shared/.env`:
+1. Web server: Apache atau Nginx.
+2. Sumber project: GitHub public, GitLab public, atau folder local di server.
+3. URL/path project, branch, domain, dan direktori deploy.
+4. Konfirmasi setiap langkah deployment yang gagal.
+
+Setelah source masuk ke server, wizard membaca project untuk mendeteksi Composer/PHP, asset NPM, dan database SQLite/MySQL. Wizard kemudian memasang dependency, menyiapkan `.env`, menjalankan migrasi Laravel, mengatur permission, dan mengaktifkan web server.
+
+## Resume setelah error
+
+Progress disimpan di `/var/lib/gratisbot/deploy.state`. Jika user memilih berhenti saat error, perbaiki masalahnya lalu jalankan perintah yang sama. Wizard akan menawarkan melanjutkan dari fase terakhir, bukan mengulang seluruh proses dari awal.
+
+Jika user memilih lanjut saat error, proses deploy diteruskan dan error dicatat sebagai peringatan agar dapat diperbaiki manual setelah deploy.
+
+## Environment Laravel
+
+Sebelum deploy production, siapkan `.env` di:
 
 ```bash
-sudo DEPLOY_BRANCH=main PHP_VERSION=8.2 AUTO_APPROVE=1 bash /tmp/gratisbot.sh https://github.com/FebrianSuban/SISTEM_INFORMASI_MAHASISWA.git example.com /var/www/SISTEM_INFORMASI_MAHASISWA
+sudo mkdir -p /var/www/NAMA_PROJECT/shared
+sudo nano /var/www/NAMA_PROJECT/shared/.env
 ```
+
+Jika `shared/.env` belum ada, wizard memakai `.env.example` sebagai fallback dan memberi peringatan. Pastikan `APP_KEY`, `APP_URL`, koneksi database, dan kredensial production sudah benar.
 
 ## Catatan
 
-- Target saat ini Ubuntu/Debian dengan `apt-get`, Apache, dan PHP.
-- DNS domain harus sudah menunjuk ke server. HTTPS belum otomatis dibuat; gunakan Certbot setelah HTTP berhasil.
-- Perintah `migrate:fresh` sengaja tidak digunakan karena dapat menghapus seluruh data production.
+- Repository GitHub/GitLab yang digunakan harus public; autentikasi Git sengaja tidak digunakan.
+- Target sistem saat ini Ubuntu/Debian dengan `apt-get`.
+- HTTPS belum otomatis dibuat. Setelah HTTP berhasil, gunakan Certbot.
+- Jangan gunakan `migrate:fresh` pada production karena dapat menghapus data.
