@@ -53,6 +53,7 @@ clone_public_repository() {
 }
 
 install_host_packages() {
+    local php_runtime_version
     if ! command -v apt-get >/dev/null 2>&1; then
         die "Sistem operasi ini tidak didukung. Skrip membutuhkan Ubuntu/Debian (apt-get)."
     fi
@@ -60,8 +61,23 @@ install_host_packages() {
     apt-get update -y
     apt-get install -y ca-certificates curl git unzip apache2
 
-    apt-get install -y php-cli php-common php-mysql php-xml php-curl php-mbstring \
-        php-zip php-bcmath php-intl php-gd libapache2-mod-php
+    if command -v php >/dev/null 2>&1; then
+        php_runtime_version="$(php -r 'printf("%d.%d", PHP_MAJOR_VERSION, PHP_MINOR_VERSION);')"
+    else
+        php_runtime_version="$PHP_VERSION"
+    fi
+    log "Memasang ekstensi untuk PHP $php_runtime_version..."
+    apt-get install -y "php${php_runtime_version}-cli" "php${php_runtime_version}-common" \
+        "php${php_runtime_version}-mysql" "php${php_runtime_version}-xml" \
+        "php${php_runtime_version}-curl" "php${php_runtime_version}-mbstring" \
+        "php${php_runtime_version}-zip" "php${php_runtime_version}-bcmath" \
+        "php${php_runtime_version}-intl" "php${php_runtime_version}-gd" \
+        "libapache2-mod-php${php_runtime_version}"
+
+    if command -v phpenmod >/dev/null 2>&1; then
+        phpenmod -v "$php_runtime_version" -s cli dom xml
+    fi
+    php -m | grep -qx 'dom' || die "Ekstensi PHP DOM belum aktif untuk PHP $php_runtime_version."
 
     if ! command -v composer >/dev/null 2>&1; then
         curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
