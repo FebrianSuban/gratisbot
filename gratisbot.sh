@@ -75,9 +75,16 @@ install_host_packages() {
         "libapache2-mod-php${php_runtime_version}"
 
     if command -v phpenmod >/dev/null 2>&1; then
-        phpenmod -v "$php_runtime_version" -s cli dom xml
+        phpenmod -v "$php_runtime_version" -s cli dom || true
+        phpenmod -v "$php_runtime_version" -s cli xml || true
     fi
-    php -m | grep -qx 'dom' || die "Ekstensi PHP DOM belum aktif untuk PHP $php_runtime_version."
+    for module in dom xml; do
+        if [[ -f "/etc/php/$php_runtime_version/mods-available/$module.ini" ]]; then
+            ln -sfn "/etc/php/$php_runtime_version/mods-available/$module.ini" \
+                "/etc/php/$php_runtime_version/cli/conf.d/20-$module.ini"
+        fi
+    done
+    php -m | grep -Eiq '^dom$' || die "Ekstensi PHP DOM belum aktif untuk PHP $php_runtime_version."
 
     if ! command -v composer >/dev/null 2>&1; then
         curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
