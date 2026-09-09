@@ -5,12 +5,13 @@ GRATISBOT adalah deployer satu perintah untuk aplikasi Laravel dari repository G
 ## Penggunaan
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh | sudo bash -s -- https://github.com/USER/REPOSITORY.git example.com /var/www/REPOSITORY
+curl -fsSL https://raw.githubusercontent.com/FebrianSuban/gratisbot/main/gratisbot.sh | sudo bash -s -- https://github.com/FebrianSuban/SISTEM_INFORMASI_MAHASISWA.git example.com /var/www/SISTEM_INFORMASI_MAHASISWA
 ```
 
 Skrip akan:
 
 - memvalidasi URL, branch, hak akses, dan struktur Laravel sebelum deploy;
+- melakukan clone GitHub public tanpa meminta username atau password;
 - memeriksa atau memasang Git, PHP, Composer, Apache, dan ekstensi PHP;
 - meng-clone repository GitHub ke release baru;
 - memakai `.env` dari `/var/www/REPOSITORY/shared/.env` jika tersedia;
@@ -35,7 +36,7 @@ Branch, versi PHP, dan mode konfirmasi dapat diatur melalui environment. Kredens
 database serta `APP_KEY` tetap dibaca dari `shared/.env`:
 
 ```bash
-sudo DEPLOY_BRANCH=main PHP_VERSION=8.2 AUTO_APPROVE=1 bash /tmp/gratisbot.sh https://github.com/USER/REPOSITORY.git example.com /var/www/REPOSITORY
+sudo DEPLOY_BRANCH=main PHP_VERSION=8.2 AUTO_APPROVE=1 bash /tmp/gratisbot.sh https://github.com/FebrianSuban/SISTEM_INFORMASI_MAHASISWA.git example.com /var/www/SISTEM_INFORMASI_MAHASISWA
 ```
 
 ## Catatan

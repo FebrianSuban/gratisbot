@@ -45,6 +45,12 @@ EOF
 
 require_command() { command -v "$1" >/dev/null 2>&1 || die "Perintah '$1' tidak ditemukan."; }
 
+clone_public_repository() {
+    GIT_TERMINAL_PROMPT=0 git -c credential.helper= -c core.askPass= clone \
+        --depth 1 --branch "$DEPLOY_BRANCH" "$REPO_URL" "$1" || \
+        die "Repository tidak dapat diakses secara public. Pastikan URL benar dan repository GitHub bersifat public; autentikasi sengaja tidak digunakan."
+}
+
 install_host_packages() {
     if ! command -v apt-get >/dev/null 2>&1; then
         die "Sistem operasi ini tidak didukung. Skrip membutuhkan Ubuntu/Debian (apt-get)."
@@ -68,6 +74,8 @@ install_host_packages() {
 validate_inputs() {
     [[ "$REPO_URL" =~ ^https://github\.com/[^/]+/[^/]+([.]git)?/?$ ]] || \
         die "URL harus berupa repository GitHub HTTPS, contoh: https://github.com/user/app.git"
+    [[ "$REPO_URL" != *"/USER/REPOSITORY"* ]] || \
+        die "Ganti USER/REPOSITORY dengan URL repository GitHub public yang sebenarnya."
     [[ "$DEPLOY_DIR" == /var/www/* ]] || die "Direktori deploy harus berada di bawah /var/www."
     [[ "$DEPLOY_DIR" != */ && "$DEPLOY_DIR" != /var/www ]] || die "Direktori deploy tidak valid."
     [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || die "Domain hanya boleh berisi huruf, angka, titik, dan tanda hubung."
@@ -78,7 +86,7 @@ preflight_repository() {
     local probe_dir
     probe_dir="$(mktemp -d)"
     trap 'rm -rf "$probe_dir"' EXIT
-    git clone --depth 1 --branch "$DEPLOY_BRANCH" "$REPO_URL" "$probe_dir/source"
+    clone_public_repository "$probe_dir/source"
     [[ -f "$probe_dir/source/artisan" ]] || die "Repository bukan aplikasi Laravel: file artisan tidak ditemukan."
     [[ -f "$probe_dir/source/composer.json" ]] || die "composer.json tidak ditemukan."
     [[ -f "$probe_dir/source/public/index.php" ]] || die "public/index.php tidak ditemukan."
@@ -125,7 +133,7 @@ deploy() {
     [[ -L "$current_link" ]] && previous_target="$(readlink -f "$current_link")"
 
     log "Meng-clone release baru..."
-    git clone --depth 1 --branch "$DEPLOY_BRANCH" "$REPO_URL" "$release_dir"
+    clone_public_repository "$release_dir"
     cd "$release_dir"
 
     if [[ -f "$DEPLOY_DIR/shared/.env" ]]; then
