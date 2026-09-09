@@ -72,6 +72,7 @@ install_host_packages() {
         "php${php_runtime_version}-curl" "php${php_runtime_version}-mbstring" \
         "php${php_runtime_version}-zip" "php${php_runtime_version}-bcmath" \
         "php${php_runtime_version}-intl" "php${php_runtime_version}-gd" \
+        "php${php_runtime_version}-sqlite3" \
         "libapache2-mod-php${php_runtime_version}"
 
     if command -v phpenmod >/dev/null 2>&1; then
@@ -85,6 +86,7 @@ install_host_packages() {
         fi
     done
     php -m | grep -Eiq '^dom$' || die "Ekstensi PHP DOM belum aktif untuk PHP $php_runtime_version."
+    php -m | grep -Eiq '^pdo_sqlite$' || die "Driver PHP PDO SQLite belum aktif untuk PHP $php_runtime_version."
 
     if ! command -v composer >/dev/null 2>&1; then
         curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
@@ -163,6 +165,14 @@ deploy() {
         warn "File .env baru dibuat dari .env.example. Pastikan kredensial production benar."
     else
         die "Konfigurasi .env tidak tersedia. Buat $DEPLOY_DIR/shared/.env lalu jalankan ulang."
+    fi
+
+    local db_connection
+    db_connection="$(sed -n 's/^DB_CONNECTION=//p' .env | head -n 1 | tr -d '\"' | tr -d "'")"
+    if [[ "$db_connection" == "sqlite" ]]; then
+        mkdir -p database
+        touch database/database.sqlite
+        log "Database SQLite disiapkan di database/database.sqlite."
     fi
 
     composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader

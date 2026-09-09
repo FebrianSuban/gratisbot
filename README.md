@@ -8,6 +8,9 @@ GRATISBOT adalah deployer satu perintah untuk aplikasi Laravel dari repository G
 curl -fsSL https://github.com/FebrianSuban/gratisbot/raw/refs/heads/main/gratisbot.sh | sudo bash -s -- https://github.com/FebrianSuban/SISTEM_INFORMASI_MAHASISWA.git example.com /var/www/SISTEM_INFORMASI_MAHASISWA
 ```
 
+URL repository adalah argumen setelah `--`; URL tersebut bukan hardcode di dalam
+skrip. Ganti URL itu dengan repository Laravel public yang ingin dideploy.
+
 Skrip akan:
 
 - memvalidasi URL, branch, hak akses, dan struktur Laravel sebelum deploy;
@@ -15,6 +18,7 @@ Skrip akan:
 - memeriksa atau memasang Git, PHP, Composer, Apache, dan ekstensi PHP;
 - meng-clone repository GitHub ke release baru;
 - memakai `.env` dari `/var/www/REPOSITORY/shared/.env` jika tersedia;
+- memasang driver database yang diperlukan; jika `.env` memakai SQLite, file database dibuat otomatis;
 - menjalankan `composer install`, cache Laravel, `migrate --force`, dan `optimize`;
 - mengaktifkan Apache ke `public/` melalui symlink `current`;
 - mempertahankan release lama sehingga kegagalan tidak mengganti release aktif.
